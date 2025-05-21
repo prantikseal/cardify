@@ -1,6 +1,7 @@
 import os
 import datetime
 import hashlib # Added for IP hashing
+from collections import defaultdict # Added for visitor analytics
 from flask import Flask, request, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
@@ -31,20 +32,82 @@ sample_templates = [
     {
         "id": 1,
         "name": "Classic Professional",
-        "structure_definition": "<div><h1>{full_name}</h1><p>{job_title}</p><p>{company_name}</p></div>",
-        "preview_image_url": "http://example.com/preview_template_1.png"
+        "structure_definition": """
+<div style="border: 1px solid #ccc; padding: 20px; width: 400px; height: 220px; font-family: Arial, sans-serif; background-color: #f8f9fa; display: flex; flex-direction: column; justify-content: space-between;">
+  <div style="display: flex; align-items: center; margin-bottom: 10px;">
+    <img src="{{logo_url}}" alt="Logo" style="max-width: 60px; max-height: 60px; margin-right: 15px; border-radius: 5px; object-fit: contain;" />
+    <div>
+      <h2 style="margin: 0 0 5px 0; font-size: 1.4em; color: #333;">{{full_name}}</h2>
+      <p style="margin: 0 0 3px 0; font-size: 1em; color: #555;">{{job_title}}</p>
+      <p style="margin: 0; font-size: 0.9em; color: #555;">{{company_name}}</p>
+    </div>
+  </div>
+  <div style="font-size: 0.85em; color: #444;">
+    <p style="margin: 3px 0;"><strong>Email:</strong> <a href="mailto:{{email}}" style="color: #007bff; text-decoration: none;">{{email}}</a></p>
+    <p style="margin: 3px 0;"><strong>Phone:</strong> {{phone_number}}</p>
+    <p style="margin: 3px 0;"><strong>Website:</strong> <a href="{{website_url}}" target="_blank" style="color: #007bff; text-decoration: none;">{{website_url}}</a></p>
+    <p style="margin: 3px 0;"><strong>Address:</strong> {{address}}</p>
+  </div>
+  <div style="margin-top: 10px; font-size: 0.8em;">
+    <a href="{{linkedin_url}}" target="_blank" style="margin-right: 8px; color: #0077b5; text-decoration: none;">LinkedIn</a>
+    <a href="{{twitter_url}}" target="_blank" style="margin-right: 8px; color: #1da1f2; text-decoration: none;">Twitter</a>
+    <a href="{{github_url}}" target="_blank" style="color: #333; text-decoration: none;">GitHub</a>
+  </div>
+</div>
+""",
+        "preview_image_url": "http://example.com/preview_template_1.png" # Placeholder
     },
     {
         "id": 2,
         "name": "Modern Minimalist",
-        "structure_definition": "<section><h2>{full_name}</h2><span>{job_title}</span></section>",
-        "preview_image_url": "http://example.com/preview_template_2.png"
+        "structure_definition": """
+<div style="border: 1px solid #e0e0e0; padding: 25px; width: 400px; height: 220px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #ffffff; display: flex; flex-direction: column; justify-content: center;">
+  <div style="text-align: center; margin-bottom: 15px;">
+    <img src="{{logo_url}}" alt="Logo" style="max-width: 50px; max-height: 50px; margin-bottom: 10px; border-radius: 50%; object-fit: contain;" />
+    <h1 style="margin: 0 0 5px 0; font-size: 1.6em; color: #2c3e50; font-weight: 300;">{{full_name}}</h1>
+    <p style="margin: 0 0 10px 0; font-size: 1em; color: #7f8c8d; font-weight: 300;">{{job_title}}</p>
+    <p style="margin: 0; font-size: 0.9em; color: #95a5a6; font-weight: 300;">{{company_name}}</p>
+  </div>
+  <hr style="border: 0; border-top: 1px solid #ecf0f1; margin: 15px 0;" />
+  <div style="font-size: 0.8em; color: #7f8c8d; text-align: center;">
+    <p style="margin: 4px 0;">{{email}} | {{phone_number}}</p>
+    <p style="margin: 4px 0;"><a href="{{website_url}}" target="_blank" style="color: #3498db; text-decoration: none;">{{website_url}}</a></p>
+    <div style="margin-top: 8px;">
+      <a href="{{linkedin_url}}" target="_blank" style="margin: 0 5px; color: #3498db; text-decoration: none;">L</a>
+      <a href="{{twitter_url}}" target="_blank" style="margin: 0 5px; color: #3498db; text-decoration: none;">T</a>
+      <a href="{{github_url}}" target="_blank" style="margin: 0 5px; color: #3498db; text-decoration: none;">G</a>
+    </div>
+  </div>
+</div>
+""",
+        "preview_image_url": "http://example.com/preview_template_2.png" # Placeholder
     },
     {
         "id": 3,
         "name": "Creative Portfolio",
-        "structure_definition": "<article><h3>{full_name}</h3><p>Portfolio: {website_url}</p></article>",
-        "preview_image_url": "http://example.com/preview_template_3.png"
+        "structure_definition": """
+<div style="border: none; padding: 20px; width: 400px; height: 220px; font-family: 'Georgia', serif; background: linear-gradient(135deg, #6dd5ed 0%, #2193b0 100%); color: #ffffff; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);">
+  <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+    <div>
+      <h2 style="margin: 0 0 5px 0; font-size: 1.5em; font-weight: bold;">{{full_name}}</h2>
+      <p style="margin: 0 0 10px 0; font-size: 0.95em; font-style: italic;">{{job_title}}</p>
+      <p style="margin: 0; font-size: 0.9em;">{{company_name}}</p>
+    </div>
+    <img src="{{logo_url}}" alt="Logo" style="max-width: 55px; max-height: 55px; border-radius: 3px; object-fit: contain; border: 2px solid white;" />
+  </div>
+  <div style="margin-top: 15px; font-size: 0.85em;">
+    <p style="margin: 5px 0;"><strong>E:</strong> <a href="mailto:{{email}}" style="color: #ffffff; text-decoration: none;">{{email}}</a></p>
+    <p style="margin: 5px 0;"><strong>P:</strong> {{phone_number}}</p>
+    <p style="margin: 5px 0;"><strong>W:</strong> <a href="{{website_url}}" target="_blank" style="color: #ffffff; text-decoration: none;">{{website_url}}</a></p>
+  </div>
+  <div style="margin-top:10px; text-align: right;">
+    <a href="{{linkedin_url}}" target="_blank" style="margin-left: 10px; color: #f0f0f0; text-decoration: none; font-size:0.9em;">LinkedIn</a>
+    <a href="{{twitter_url}}" target="_blank" style="margin-left: 10px; color: #f0f0f0; text-decoration: none; font-size:0.9em;">Twitter</a>
+  </div>
+  <p style="font-size: 0.75em; margin-top: 10px; max-height: 40px; overflow: hidden;">{{business_description}}</p>
+</div>
+""",
+        "preview_image_url": "http://example.com/preview_template_3.png" # Placeholder
     }
 ]
 
@@ -303,6 +366,15 @@ def get_public_card_by_slug(card_slug):
 def get_card_by_slug(card_slug):
     return next((card for card in user_cards if card['card_slug'] == card_slug and card['is_active']), None)
 
+# Helper function to get a card and verify ownership
+def get_card_and_verify_ownership(card_id, user_id):
+    card = next((card for card in user_cards if card['id'] == card_id), None)
+    if not card:
+        return None, ('Card not found', 404)
+    if card['user_id'] != user_id:
+        return None, ('Access forbidden: You do not own this card', 403)
+    return card, None
+
 @app.route('/cards/<string:card_slug>/view', methods=['POST'])
 def record_card_view(card_slug):
     card = get_card_by_slug(card_slug)
@@ -385,6 +457,86 @@ def record_link_click(card_slug):
     })
     # print(f"Recorded link click for card {card['id']}") # For debugging
     return jsonify({'message': 'Link click recorded'}), 200
+
+@app.route('/cards/<int:card_id>/analytics/visitors', methods=['GET'])
+def get_visitor_analytics(card_id):
+    user_id = get_current_user_id_from_token()
+    if not user_id:
+        return jsonify({'message': 'Authentication required'}), 401
+
+    card, error_response = get_card_and_verify_ownership(card_id, user_id)
+    if error_response:
+        return jsonify({'message': error_response[0]}), error_response[1]
+
+    card_visits = [v for v in analytics_visitors if v['card_id'] == card_id]
+
+    # Process data: group by visit_date and count unique visitor_ip_hash
+    daily_unique_visitors = defaultdict(set)
+    for visit in card_visits:
+        daily_unique_visitors[visit['visit_date']].add(visit['visitor_ip_hash'])
+
+    processed_data = []
+    for visit_date, unique_ips in daily_unique_visitors.items():
+        processed_data.append({
+            "date": visit_date,
+            "unique_visitors": len(unique_ips)
+        })
+    
+    # Sort by date (optional, but good for consistency)
+    processed_data.sort(key=lambda x: x['date'])
+
+    return jsonify(processed_data), 200
+
+@app.route('/cards/<int:card_id>/analytics/messages', methods=['GET'])
+def get_message_analytics(card_id):
+    user_id = get_current_user_id_from_token()
+    if not user_id:
+        return jsonify({'message': 'Authentication required'}), 401
+
+    card, error_response = get_card_and_verify_ownership(card_id, user_id)
+    if error_response:
+        return jsonify({'message': error_response[0]}), error_response[1]
+
+    card_messages = [m for m in analytics_messages if m['card_id'] == card_id]
+    
+    # Sort by received_at descending (newest first)
+    card_messages.sort(key=lambda x: x['received_at'], reverse=True)
+
+    return jsonify(card_messages), 200
+
+@app.route('/cards/<int:card_id>/analytics/appointments', methods=['GET'])
+def get_appointment_analytics(card_id):
+    user_id = get_current_user_id_from_token()
+    if not user_id:
+        return jsonify({'message': 'Authentication required'}), 401
+
+    card, error_response = get_card_and_verify_ownership(card_id, user_id)
+    if error_response:
+        return jsonify({'message': error_response[0]}), error_response[1]
+
+    card_appointments = [a for a in analytics_appointments if a['card_id'] == card_id]
+    
+    # Sort by created_at descending (newest first)
+    card_appointments.sort(key=lambda x: x['created_at'], reverse=True)
+
+    return jsonify(card_appointments), 200
+
+@app.route('/cards/<int:card_id>/analytics/link_clicks', methods=['GET'])
+def get_link_click_analytics(card_id):
+    user_id = get_current_user_id_from_token()
+    if not user_id:
+        return jsonify({'message': 'Authentication required'}), 401
+
+    card, error_response = get_card_and_verify_ownership(card_id, user_id)
+    if error_response:
+        return jsonify({'message': error_response[0]}), error_response[1]
+
+    card_link_clicks = [lc for lc in analytics_link_clicks if lc['card_id'] == card_id]
+    
+    # Sort by clicked_at descending (newest first)
+    card_link_clicks.sort(key=lambda x: x['clicked_at'], reverse=True)
+
+    return jsonify(card_link_clicks), 200
 
 if __name__ == '__main__':
     # For development, Flask's built-in server is fine.

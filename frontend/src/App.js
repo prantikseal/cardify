@@ -6,7 +6,8 @@ import HomePage from './components/HomePage';
 import Register from './components/Auth/Register';
 import Login from './components/Auth/Login';
 import DashboardPage from './components/DashboardPage';
-import CreateCardPage from './pages/CreateCardPage'; // Import the new page
+import CreateCardPage from './pages/CreateCardPage';
+import PublicCardPage from './pages/PublicCardPage'; // Import the public card page
 
 function App() {
   const [currentUserToken, setCurrentUserToken] = useState(authService.getCurrentUserToken());
@@ -69,6 +70,7 @@ function App() {
             path="/create-card" 
             element={currentUserToken ? <CreateCardPage /> : <Navigate to="/login" replace />} 
           />
+          <Route path="/c/:card_slug" element={<PublicCardPage />} />
           
           {/* Add more routes as needed */}
         </Routes>
